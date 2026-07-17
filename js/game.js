@@ -53,12 +53,26 @@ const state = {
   emptyTimer: 0,
   saveTimer: 0,
   dirty: false,
+  // business layer (timestamp-based; survives the game being closed)
+  larder: {},          // speciesId -> carcass count
+  contractOwned: false,
+  contractNextAt: 0,
+  taxidermyOwned: false,
+  mounting: null,
+  mountDoneAt: 0,
+  mountReady: null,
+  trophies: [],
+  order: null,
+  nextOrderAt: 0,
+  awayReport: null,    // lines shown on return after time away
 };
 
 const GUN = () => GUNS[state.gunId];
 const SITE = () => SITES[state.siteId];
 const spreadRadius = () => GUN().spread + (IS_TOUCH ? 3 : 0);
-const xpNeeded = (level) => 18 + (level - 1) * 14;
+// Each level costs ~42% more than the last — early levels are quick,
+// the Semi-Auto at level 8 is a real campaign.
+const xpNeeded = (level) => Math.round(35 * Math.pow(1.42, level - 1));
 const comboMult = () => Math.min(1 + state.combo * 0.15, 3);
 
 // ---------------------------------------------------------------- saves
@@ -79,6 +93,34 @@ function loadSave() {
     state.sitesOwned = Array.isArray(s.sitesOwned) && s.sitesOwned.length ? s.sitesOwned : ["home"];
     state.siteId = SITES[s.siteId] ? s.siteId : "home";
     Sfx.muted = !!s.muted;
+    // business layer
+    state.larder = s.larder && typeof s.larder === "object" ? s.larder : {};
+    for (const id in state.larder) if (!SPECIES[id]) delete state.larder[id];
+    state.contractOwned = !!s.contractOwned;
+    state.contractNextAt = s.contractNextAt || 0;
+    state.taxidermyOwned = !!s.taxidermyOwned;
+    state.mounting = SPECIES[s.mounting] ? s.mounting : null;
+    state.mountDoneAt = s.mountDoneAt || 0;
+    state.mountReady = SPECIES[s.mountReady] ? s.mountReady : null;
+    state.trophies = Array.isArray(s.trophies) ? s.trophies.filter((t) => SPECIES[t]) : [];
+    state.order = s.order && Array.isArray(s.order.items) ? s.order : null;
+    state.nextOrderAt = s.nextOrderAt || 0;
+    // Catch up on everything that happened while the game was closed
+    const lastSeen = s.lastSeen || Date.now();
+    const away = Math.min(Date.now() - lastSeen, Biz.MAX_OFFLINE);
+    const moneyBefore = state.money;
+    const events = Biz.process(lastSeen + away);
+    if (away > 90e3) {
+      const lines = events.filter((ev) => ev.kind !== "orderNew").map((ev) => ev.text);
+      const gained = state.money - moneyBefore;
+      if (lines.length || gained > 0) {
+        state.awayReport = {
+          minutes: Math.round(away / 60e3),
+          gained,
+          lines,
+        };
+      }
+    }
   } catch (e) { /* corrupt save — start fresh */ }
   if (!state.gunsOwned.includes(state.gunId)) state.gunId = state.gunsOwned[0];
   if (!state.sitesOwned.includes(state.siteId)) state.siteId = state.sitesOwned[0];
@@ -100,6 +142,17 @@ function writeSave() {
       sitesOwned: state.sitesOwned,
       siteId: state.siteId,
       muted: Sfx.muted,
+      larder: state.larder,
+      contractOwned: state.contractOwned,
+      contractNextAt: state.contractNextAt,
+      taxidermyOwned: state.taxidermyOwned,
+      mounting: state.mounting,
+      mountDoneAt: state.mountDoneAt,
+      mountReady: state.mountReady,
+      trophies: state.trophies,
+      order: state.order,
+      nextOrderAt: state.nextOrderAt,
+      lastSeen: Date.now(),
     }));
   } catch (e) { /* storage unavailable */ }
   state.dirty = false;
@@ -377,8 +430,11 @@ function shoot() {
     state.combo++;
     state.birdsShot++;
     const mult = comboMult();
-    const cash = Math.round(sp.value * mult);
+    // A tip in the field; the carcass goes to the larder where the real
+    // money is (sell, contract, orders, taxidermy).
+    const cash = Math.max(1, Math.round(sp.value * 0.4 * mult * Biz.buffMult()));
     state.money += cash;
+    Biz.addToLarder(b.species);
     addPopup(b.x, b.y - 10, "+\u00a3" + cash, RARITY_COLORS[sp.rarity]);
     grantXp(Math.round(sp.xp * mult));
   }
@@ -411,6 +467,22 @@ function startReload() {
 function update(dt) {
   UI.update(dt);
   if (state.banner && (state.banner.t -= dt) <= 0) state.banner = null;
+
+  // The business clock never pauses
+  for (const ev of Biz.process(Date.now())) {
+    if (ev.kind === "contract") {
+      addPopup(208, 34, ev.text, "#9fe08a");
+    } else if (ev.kind === "mount") {
+      state.banner = { text: "MOUNT READY", sub: ev.text + " — see ESTATE", t: 2.4 };
+      Sfx.fanfare();
+    } else if (ev.kind === "orderNew") {
+      state.banner = { text: "NEW ORDER", sub: ev.text, t: 2.4 };
+      Sfx.click();
+    } else if (ev.kind === "orderExpired") {
+      addPopup(208, 34, ev.text, "#e0574a");
+    }
+  }
+
   if (UI.open) return; // world pauses while a menu is open
 
   state.time += dt;
@@ -544,7 +616,37 @@ function render() {
   renderHUD();
   if (state.banner) renderBanner();
   UI.drawChips(ctx);
+  if (state.awayReport) renderAwayReport();
   renderCrosshair();
+}
+
+function renderAwayReport() {
+  const r = state.awayReport;
+  const pw = 320, ph = 90 + r.lines.length * 14;
+  const px = (W - pw) / 2, py = (H - ph) / 2;
+  ctx.fillStyle = "rgba(8,10,14,0.7)";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#191c24";
+  ctx.fillRect(px, py, pw, ph);
+  ctx.strokeStyle = "#ffd45e";
+  ctx.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
+  outlineText("WHILE YOU WERE AWAY", W / 2, py + 10, "#ffd45e",
+    "bold 11px 'Courier New', monospace", "center");
+  outlineText(r.minutes >= 60
+    ? Math.floor(r.minutes / 60) + "h " + (r.minutes % 60) + "m on the estate"
+    : r.minutes + " minutes on the estate",
+    W / 2, py + 26, "#8d94a5", "8px 'Courier New', monospace", "center");
+  let y = py + 44;
+  for (const line of r.lines) {
+    outlineText(line, W / 2, y, "#e8e2cd", "8px 'Courier New', monospace", "center");
+    y += 14;
+  }
+  if (r.gained > 0) {
+    outlineText("+\u00a3" + r.gained, W / 2, y + 4, "#9fe08a",
+      "bold 12px 'Courier New', monospace", "center");
+  }
+  outlineText("— tap to continue —", W / 2, py + ph - 14, "#ffd45e",
+    "bold 8px 'Courier New', monospace", "center");
 }
 
 function renderBanner() {
@@ -577,9 +679,9 @@ function renderHUD() {
       "bold 8px 'Courier New', monospace");
   }
 
-  // Wind, top centre
+  // Wind, top bar right of the chips
   if (SITE().wind && Math.abs(state.wind) > 0.8) {
-    const wx = W / 2, wy = 8;
+    const wx = 300, wy = 8;
     outlineText("WIND", wx, wy, "#cfd8e8", "bold 8px 'Courier New', monospace", "center");
     const len = clamp(Math.abs(state.wind) * 2.4, 4, 24);
     const dir = Math.sign(state.wind);
@@ -701,6 +803,11 @@ function start() {
 }
 
 function pointerDown(x, y) {
+  if (state.awayReport) {
+    state.awayReport = null;
+    Sfx.click();
+    return;
+  }
   if (UI.pointer(x, y)) { return; }
   shoot();
 }
@@ -785,8 +892,19 @@ if (urlParams.has("sim")) {
       for (let i = 0; i < 12; i++) update(1 / 60);
     }
   }
-  // ?menu=guns|sites opens a panel for screenshots
+  // ?menu=guns|sites|estate opens a panel for screenshots
   if (urlParams.has("menu")) UI.open = urlParams.get("menu");
+  if (urlParams.has("tab")) UI.tab = urlParams.get("tab");
+}
+// ?testbiz=1 seeds business state for screenshots/tests
+if (urlParams.has("testbiz")) {
+  state.contractOwned = true;
+  state.taxidermyOwned = true;
+  state.level = Math.max(state.level, 6);
+  state.money += 500;
+  state.larder = { wood: 7, feral: 4, duck: 3, pheasant: 2 };
+  state.mountReady = "pheasant";
+  Biz.genOrder(Date.now());
 }
 // ?debug=1 mirrors sim state into the tab title (used for automated checks)
 if (urlParams.has("debug")) {

@@ -28,11 +28,13 @@ automatically in your browser.
 
 ## Status
 
-**Milestone 2 — "It progresses"**: three sites (Home Field, The Walled
-Pasture, Foxglove Brow), four guns, XP/levels with a shop, ten bird
-species across rarity tiers, protected species with fines, combo
-multiplier, wind, and the schnauzer retrieving downed birds.
+**Milestone 3 — "It's a business"**: shot birds go to the Game Larder;
+sell fresh, sign the Butcher's Contract (auto-sells at 150% every 20s,
+even while the game is closed), fulfil rotating village orders for ~2.2x,
+or mount rare birds in the taxidermy workshop — sell mounts for 8x or
+display them for a permanent +6% income buff each. "While you were away"
+report on return. Levelling curve is now exponential.
 
-Coming next (see the design doc): the business layer — game larder,
-butcher's contracts with offline income, taxidermy and the trophy room —
-then the Golden Curlew at Curlew Barn.
+Coming next (see the design doc): the Farmhouse Lawn and Stonebeck
+Hamlet sites, the perk tree, the almanac — and the Golden Curlew at
+Curlew Barn.
