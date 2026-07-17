@@ -92,4 +92,40 @@ const Sfx = {
     this.noise(0.09, 500, 120, 0.3);
     this.tone("sine", 95, 50, 0.09, 0.3);
   },
+
+  click() {
+    if (!this.ready()) return;
+    this.tone("square", 900, 700, 0.03, 0.1);
+  },
+
+  buy() {
+    if (!this.ready()) return;
+    this.tone("square", 520, 520, 0.05, 0.16);        // till key
+    this.tone("sine", 990, 990, 0.08, 0.22, 0.06);    // cha-
+    this.tone("sine", 1480, 1480, 0.14, 0.22, 0.13);  // ching
+  },
+
+  deny() {
+    if (!this.ready()) return;
+    this.tone("square", 220, 160, 0.12, 0.16);
+  },
+
+  fanfare() {
+    if (!this.ready()) return;
+    this.tone("triangle", 523, 523, 0.1, 0.28);
+    this.tone("triangle", 659, 659, 0.1, 0.28, 0.09);
+    this.tone("triangle", 784, 784, 0.12, 0.28, 0.18);
+    this.tone("triangle", 1046, 1046, 0.24, 0.3, 0.28);
+  },
+
+  penalty() {
+    if (!this.ready()) return;
+    this.tone("sawtooth", 340, 340, 0.12, 0.14);
+    this.tone("sawtooth", 254, 254, 0.2, 0.16, 0.12);
+  },
+
+  bark() {
+    if (!this.ready()) return;
+    this.tone("square", 340, 170, 0.07, 0.12);
+  },
 };

@@ -16,7 +16,8 @@ out="${1:?usage: tools/build-artifact.sh <output-file>}"
   # Everything between <div id="wrap"> and its closing tag
   sed -n '/<div id="wrap">/,/^  <\/div>/p' index.html
   echo '<script>'
-  cat js/util.js js/haptics.js js/audio.js js/sprites.js js/background.js js/game.js
+  cat js/util.js js/haptics.js js/audio.js js/sprites.js js/data.js \
+      js/background.js js/dog.js js/ui.js js/game.js
   echo '</script>'
 } > "$out"
 

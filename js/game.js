@@ -10,7 +10,6 @@ const ctx = canvas.getContext("2d");
 ctx.imageSmoothingEnabled = false;
 
 const overlay = document.getElementById("overlay");
-const wrap = document.getElementById("wrap");
 
 const IS_TOUCH = matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
 if (IS_TOUCH) document.body.classList.add("touch");
@@ -18,70 +17,135 @@ if (IS_TOUCH) document.body.classList.add("touch");
 // ---------------------------------------------------------------- state
 const state = {
   started: false,
+  // progression
   money: 0,
+  xp: 0,
+  level: 1,
+  combo: 0,
+  gunsOwned: ["sbs"],
+  gunId: "sbs",
+  sitesOwned: ["home"],
+  siteId: "home",
+  // stats
   birdsShot: 0,
   shotsFired: 0,
   bestBrace: 0,
+  fetched: 0,
+  // moment to moment
   shells: 2,
-  maxShells: 2,
-  reloading: 0,        // seconds remaining, 0 = not reloading
+  reloading: 0,
   shotCooldown: 0,
   aim: { x: W / 2, y: H / 2 },
   shake: 0,
   time: 0,
   spawnTimer: 1,
   birds: [],
+  corpses: [],       // downed birds on the ground, waiting for the dog
   feathers: [],
   popups: [],
-  tracers: [],         // {points:[{x,y}], t}
-  flash: 0,            // muzzle flash timer
-  tapMarker: 0,        // touch: brief crosshair after each tap
-  emptyTimer: 0,       // touch: auto-reload countdown when out of shells
+  tracers: [],
+  banner: null,      // {text, sub, t} big center announcement
+  wind: 0,
+  windTarget: 0,
+  windTimer: 0,
+  flash: 0,
+  tapMarker: 0,
+  emptyTimer: 0,
   saveTimer: 0,
   dirty: false,
 };
 
+const GUN = () => GUNS[state.gunId];
+const SITE = () => SITES[state.siteId];
+const spreadRadius = () => GUN().spread + (IS_TOUCH ? 3 : 0);
+const xpNeeded = (level) => 18 + (level - 1) * 14;
+const comboMult = () => Math.min(1 + state.combo * 0.15, 3);
+
+// ---------------------------------------------------------------- saves
 function loadSave() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return;
     const s = JSON.parse(raw);
     state.money = s.money || 0;
+    state.xp = s.xp || 0;
+    state.level = s.level || 1;
     state.birdsShot = s.birdsShot || 0;
     state.shotsFired = s.shotsFired || 0;
     state.bestBrace = s.bestBrace || 0;
+    state.fetched = s.fetched || 0;
+    state.gunsOwned = Array.isArray(s.gunsOwned) && s.gunsOwned.length ? s.gunsOwned : ["sbs"];
+    state.gunId = GUNS[s.gunId] ? s.gunId : "sbs";
+    state.sitesOwned = Array.isArray(s.sitesOwned) && s.sitesOwned.length ? s.sitesOwned : ["home"];
+    state.siteId = SITES[s.siteId] ? s.siteId : "home";
     Sfx.muted = !!s.muted;
   } catch (e) { /* corrupt save — start fresh */ }
+  if (!state.gunsOwned.includes(state.gunId)) state.gunId = state.gunsOwned[0];
+  if (!state.sitesOwned.includes(state.siteId)) state.siteId = state.sitesOwned[0];
+  state.shells = GUN().shells;
 }
 
 function writeSave() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       money: state.money,
+      xp: state.xp,
+      level: state.level,
       birdsShot: state.birdsShot,
       shotsFired: state.shotsFired,
       bestBrace: state.bestBrace,
+      fetched: state.fetched,
+      gunsOwned: state.gunsOwned,
+      gunId: state.gunId,
+      sitesOwned: state.sitesOwned,
+      siteId: state.siteId,
       muted: Sfx.muted,
     }));
   } catch (e) { /* storage unavailable */ }
   state.dirty = false;
 }
 
+// ---------------------------------------------------------------- equip / travel
+function equipGun(id) {
+  state.gunId = id;
+  state.reloading = 0;
+  state.shells = GUN().shells;
+  state.dirty = true;
+  state.saveTimer = 0;
+}
+
+function travelTo(id) {
+  state.siteId = id;
+  state.birds = [];
+  state.corpses = [];
+  state.feathers = [];
+  state.tracers = [];
+  state.spawnTimer = 0.6;
+  state.wind = 0;
+  state.windTarget = SITE().wind ? rand(-8, 8) : 0;
+  Dog.reset();
+  Game.bg = BG_BUILDERS[SITE().bg](W, H);
+  state.banner = { text: SITE().name.toUpperCase(), sub: SITE().desc, t: 2.2 };
+  state.dirty = true;
+  state.saveTimer = 0;
+}
+
 // ---------------------------------------------------------------- birds
-function spawnBird() {
-  const species = Math.random() < 0.28 ? "wood" : "feral";
-  const dir = Math.random() < 0.5 ? 1 : -1;
-  const scale = Math.random() < 0.5 ? 2 : 1.5;
-  const speed = rand(45, 95) * (scale === 2 ? 1.15 : 1);
+function spawnBird(forceSpecies, forceY, forceDir) {
+  const speciesId = forceSpecies || weightedPick(SITE().spawn);
+  const sp = SPECIES[speciesId];
+  const dir = forceDir !== undefined ? forceDir : (Math.random() < 0.5 ? 1 : -1);
+  const scale = rand(sp.scales[0], sp.scales[1]);
+  const shapeW = sp.shape.w;
   state.birds.push({
-    species,
+    species: speciesId,
     dir,
     scale,
-    x: dir === 1 ? -PIGEON_W * scale : W + PIGEON_W * scale,
-    baseY: rand(25, 170),
+    x: dir === 1 ? -shapeW * scale : W + shapeW * scale,
+    baseY: forceY !== undefined ? forceY : rand(sp.band[0], sp.band[1]),
     y: 0,
-    speed,
-    bobAmp: rand(2, 7),
+    speed: rand(sp.speed[0], sp.speed[1]),
+    bobAmp: sp.rarity === "protected" ? rand(5, 10) : rand(2, 7),
     bobFreq: rand(1.5, 3),
     phase: rand(0, Math.PI * 2),
     frameTimer: rand(0, 0.2),
@@ -93,6 +157,24 @@ function spawnBird() {
   });
 }
 
+function spawnWave() {
+  const id = weightedPick(SITE().spawn);
+  const sp = SPECIES[id];
+  spawnBird(id);
+  // Ducks fly in lines; pigeons sometimes come in pairs
+  if (sp.shape === SHAPE_DUCK && Math.random() < 0.45) {
+    const lead = state.birds[state.birds.length - 1];
+    for (let i = 1; i <= randInt(1, 2); i++) {
+      spawnBird(id, clamp(lead.baseY + i * 11, 25, 190), lead.dir);
+      const b = state.birds[state.birds.length - 1];
+      b.x -= lead.dir * i * 22;
+      b.speed = lead.speed;
+    }
+  } else if (sp.shape === SHAPE_PIGEON && Math.random() < 0.16) {
+    spawnBird(id);
+  }
+}
+
 const FLAP_SEQ = [0, 1, 2, 1];
 
 function updateBird(b, dt) {
@@ -102,7 +184,7 @@ function updateBird(b, dt) {
     b.frameTimer += dt;
     const frameDur = 1 / 11;
     b.frame = FLAP_SEQ[Math.floor(b.frameTimer / frameDur) % FLAP_SEQ.length];
-    return b.x > -30 * b.scale && b.x < W + 30 * b.scale;
+    return b.x > -40 * b.scale && b.x < W + 40 * b.scale;
   }
   // dead: tumble and fall
   b.vy += 240 * dt;
@@ -112,25 +194,47 @@ function updateBird(b, dt) {
   if (b.y >= GROUND_Y) {
     Sfx.thud();
     groundPuff(b.x, GROUND_Y);
+    if (SPECIES[b.species].rarity !== "protected") {
+      state.corpses.push({ x: clamp(b.x, 10, W - 10), species: b.species, scale: b.scale, t: 25 });
+    }
     return false;
   }
   return true;
 }
 
 function drawBird(b) {
+  const sp = SPECIES[b.species];
   const spr = SPRITES[b.species][b.state === "fly" ? b.frame : 1];
   ctx.save();
   ctx.translate(Math.round(b.x), Math.round(b.y));
   if (b.state === "dead") ctx.rotate(b.rot);
   ctx.scale(b.dir === 1 ? b.scale : -b.scale, b.scale);
-  ctx.drawImage(spr, -PIGEON_W / 2, -PIGEON_H / 2);
+  ctx.drawImage(spr, -sp.shape.w / 2, -sp.shape.h / 2);
   ctx.restore();
+  // Protected birds carry a blinking warning so you learn to hold fire
+  if (b.state === "fly" && sp.rarity === "protected" &&
+      Math.floor(state.time * 3) % 2 === 0) {
+    outlineText("!", Math.round(b.x), Math.round(b.y - sp.shape.h * b.scale / 2 - 10),
+      "#e0574a", "bold 9px 'Courier New', monospace", "center");
+  }
 }
 
 function birdHitbox(b) {
-  const w = PIGEON_W * b.scale;
-  const h = PIGEON_H * b.scale;
+  const sp = SPECIES[b.species];
+  const w = sp.shape.w * b.scale;
+  const h = sp.shape.h * b.scale;
   return { x: b.x - w / 2 - 1, y: b.y - h / 2 - 1, w: w + 2, h: h + 2 };
+}
+
+function drawCorpse(cp) {
+  const sp = SPECIES[cp.species];
+  if (cp.t < 3 && Math.floor(cp.t * 6) % 2 === 0) return; // blink before fading
+  ctx.save();
+  ctx.translate(Math.round(cp.x), GROUND_Y + 4);
+  ctx.rotate(1.9);
+  ctx.scale(cp.scale * 0.9, cp.scale * 0.9);
+  ctx.drawImage(SPRITES[cp.species][1], -sp.shape.w / 2, -sp.shape.h / 2);
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------- particles
@@ -167,7 +271,7 @@ function groundPuff(x, y) {
 function updateFeather(f, dt) {
   f.life -= dt;
   if (f.life <= 0) return false;
-  f.vy = Math.min(f.vy + 100 * dt, 26);          // flutter down, not plummet
+  f.vy = Math.min(f.vy + 100 * dt, 26);
   f.x += (f.vx + Math.sin(state.time * 6 + f.phase) * 10) * dt;
   f.y += f.vy * dt;
   f.vx *= 1 - 1.4 * dt;
@@ -175,14 +279,40 @@ function updateFeather(f, dt) {
 }
 
 function addPopup(x, y, text, color) {
-  state.popups.push({ x, y, text, color, t: 0.95 });
+  state.popups.push({ x: clamp(x, 24, W - 24), y, text, color, t: 0.95 });
+}
+
+// ---------------------------------------------------------------- XP
+function grantXp(amount) {
+  state.xp += amount;
+  let leveled = false;
+  while (state.xp >= xpNeeded(state.level)) {
+    state.xp -= xpNeeded(state.level);
+    state.level++;
+    leveled = true;
+  }
+  if (leveled) {
+    const unlocks = [];
+    for (const id of GUN_ORDER) {
+      if (GUNS[id].lvl === state.level) unlocks.push(GUNS[id].name);
+    }
+    for (const id of SITE_ORDER) {
+      if (SITES[id].lvl === state.level) unlocks.push(SITES[id].name);
+    }
+    state.banner = {
+      text: "LEVEL " + state.level + "!",
+      sub: unlocks.length ? "Now available: " + unlocks.join(", ") : "",
+      t: 2.4,
+    };
+    Sfx.fanfare();
+    Haptics.brace();
+    // A level-up tops the gun off as a little treat
+    state.shells = GUN().shells;
+    state.reloading = 0;
+  }
 }
 
 // ---------------------------------------------------------------- shooting
-const PELLET_COUNT = 9;
-// Fingers are less precise than a mouse — the cone is a touch wider on phones
-const SPREAD_RADIUS = IS_TOUCH ? 16 : 13;
-
 function shoot() {
   if (!state.started || state.reloading > 0 || state.shotCooldown > 0) return;
   if (state.shells <= 0) {
@@ -190,9 +320,10 @@ function shoot() {
     startReload();
     return;
   }
+  const gun = GUN();
   state.shells--;
   state.shotsFired++;
-  state.shotCooldown = 0.14;
+  state.shotCooldown = gun.cooldown;
   state.shake = 3.2;
   state.flash = 0.08;
   state.tapMarker = 0.3;
@@ -200,17 +331,20 @@ function shoot() {
   Sfx.shot();
   Haptics.shot();
 
-  // Pellet cloud around the aim point
+  // Pellet cloud, drifted by wind
   const pts = [];
-  for (let i = 0; i < PELLET_COUNT; i++) {
-    const r = Math.abs(randNorm()) * SPREAD_RADIUS;
+  const radius = spreadRadius();
+  for (let i = 0; i < gun.pellets; i++) {
+    const r = Math.abs(randNorm()) * radius;
     const a = rand(0, Math.PI * 2);
-    pts.push({ x: state.aim.x + Math.cos(a) * r, y: state.aim.y + Math.sin(a) * r });
+    pts.push({
+      x: state.aim.x + Math.cos(a) * r + state.wind,
+      y: state.aim.y + Math.sin(a) * r,
+    });
   }
-  pts.push({ x: state.aim.x, y: state.aim.y }); // one true pellet
+  pts.push({ x: state.aim.x + state.wind, y: state.aim.y });
   state.tracers.push({ points: pts, t: 0.09 });
 
-  // Hit detection
   const killed = [];
   for (const b of state.birds) {
     if (b.state !== "fly") continue;
@@ -223,48 +357,80 @@ function shoot() {
     }
   }
 
+  let paidKills = 0;
   for (const b of killed) {
     b.state = "dead";
     b.vy = rand(-30, 10);
     b.vr = rand(-7, 7);
-    const value = SPECIES[b.species].value;
-    state.money += value;
-    state.birdsShot++;
     burstFeathers(b);
-    addPopup(b.x, b.y - 10, "+\u00a3" + value, "#ffd45e");
+    const sp = SPECIES[b.species];
+    if (sp.rarity === "protected") {
+      const fine = sp.fine;
+      state.money = Math.max(0, state.money - fine);
+      state.combo = 0;
+      addPopup(b.x, b.y - 10, sp.name.toUpperCase() + "! -\u00a3" + fine, "#e0574a");
+      Sfx.penalty();
+      Haptics.brace();
+      continue;
+    }
+    paidKills++;
+    state.combo++;
+    state.birdsShot++;
+    const mult = comboMult();
+    const cash = Math.round(sp.value * mult);
+    state.money += cash;
+    addPopup(b.x, b.y - 10, "+\u00a3" + cash, RARITY_COLORS[sp.rarity]);
+    grantXp(Math.round(sp.xp * mult));
   }
 
-  if (killed.length >= 1) {
-    Sfx.coin();
-    Haptics.kill();
-  }
-  if (killed.length >= 2) {
-    const bonus = 10 * (killed.length - 1);
+  if (paidKills >= 1) Sfx.coin();
+  if (paidKills >= 1) Haptics.kill();
+  if (paidKills >= 2) {
+    const bonus = 10 * (paidKills - 1);
     state.money += bonus;
-    state.bestBrace = Math.max(state.bestBrace, killed.length);
+    state.bestBrace = Math.max(state.bestBrace, paidKills);
     addPopup(state.aim.x, state.aim.y - 24, "BRACE! +\u00a3" + bonus, "#ffef9e");
     Sfx.brace();
     Haptics.brace();
+    grantXp(6 * (paidKills - 1));
+  }
+  if (killed.length === 0) {
+    state.combo = Math.max(0, state.combo - 2); // misses bleed the combo
   }
 
-  if (state.shells === 0) state.saveTimer = 0; // save soon after emptying the gun
+  if (state.shells === 0) state.saveTimer = 0;
 }
 
 function startReload() {
-  if (state.reloading > 0 || state.shells === state.maxShells) return;
-  state.reloading = 0.9;
+  if (state.reloading > 0 || state.shells === GUN().shells) return;
+  state.reloading = GUN().reload;
   Sfx.reloadStart();
 }
 
 // ---------------------------------------------------------------- update
 function update(dt) {
+  UI.update(dt);
+  if (state.banner && (state.banner.t -= dt) <= 0) state.banner = null;
+  if (UI.open) return; // world pauses while a menu is open
+
   state.time += dt;
   state.shotCooldown = Math.max(0, state.shotCooldown - dt);
   state.flash = Math.max(0, state.flash - dt);
   state.tapMarker = Math.max(0, state.tapMarker - dt);
   state.shake = Math.max(0, state.shake - dt * 14);
 
-  // On touch there's no R key: reload starts by itself shortly after emptying
+  // Wind drifts slowly toward a wandering target
+  if (SITE().wind) {
+    state.windTimer -= dt;
+    if (state.windTimer <= 0) {
+      state.windTimer = rand(4, 8);
+      state.windTarget = rand(-9, 9);
+    }
+    state.wind += (state.windTarget - state.wind) * dt * 0.6;
+  } else {
+    state.wind = 0;
+  }
+
   if (IS_TOUCH && state.shells === 0 && state.reloading === 0) {
     state.emptyTimer += dt;
     if (state.emptyTimer > 0.55) startReload();
@@ -276,28 +442,32 @@ function update(dt) {
     state.reloading -= dt;
     if (state.reloading <= 0) {
       state.reloading = 0;
-      state.shells = state.maxShells;
+      state.shells = GUN().shells;
       Sfx.reloadEnd();
     }
   }
 
   state.spawnTimer -= dt;
   if (state.spawnTimer <= 0) {
-    spawnBird();
-    state.spawnTimer = rand(0.9, 2.2);
-    // occasional small flock
-    if (Math.random() < 0.18) {
-      spawnBird();
-      spawnBird();
-    }
+    spawnWave();
+    const [a, b] = SITE().interval;
+    state.spawnTimer = rand(a, b);
   }
 
   state.birds = state.birds.filter((b) => updateBird(b, dt));
+  state.corpses = state.corpses.filter((cp) => (cp.t -= dt) > 0);
   state.feathers = state.feathers.filter((f) => updateFeather(f, dt));
   state.popups = state.popups.filter((p) => (p.t -= dt) > 0);
   state.tracers = state.tracers.filter((t) => (t.t -= dt) > 0);
 
-  // Throttled autosave
+  Dog.update(dt, state.corpses, (x) => {
+    state.money += 1;
+    state.fetched++;
+    state.dirty = true;
+    addPopup(x, GROUND_Y - 12, "Fetched +\u00a31", "#cfc9b4");
+    Sfx.bark();
+  });
+
   if (state.dirty) {
     state.saveTimer -= dt;
     if (state.saveTimer <= 0) {
@@ -326,9 +496,10 @@ function render() {
 
   ctx.drawImage(Game.bg, 0, 0);
 
+  for (const cp of state.corpses) drawCorpse(cp);
+  Dog.draw(ctx);
   for (const b of state.birds) drawBird(b);
 
-  // feathers
   for (const f of state.feathers) {
     ctx.globalAlpha = clamp(f.life * 2, 0, 1);
     ctx.fillStyle = f.color;
@@ -336,7 +507,6 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
-  // pellet tracers
   for (const t of state.tracers) {
     ctx.globalAlpha = t.t / 0.09 * 0.55;
     ctx.strokeStyle = "#fff3c8";
@@ -351,7 +521,6 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  // muzzle flash
   if (state.flash > 0) {
     const fx = W / 2 + (state.aim.x - W / 2) * 0.35;
     const r = 10 + (0.08 - state.flash) * 220;
@@ -362,7 +531,6 @@ function render() {
     ctx.fillRect(fx - r, H - r, r * 2, r);
   }
 
-  // popups
   for (const p of state.popups) {
     ctx.globalAlpha = clamp(p.t * 2, 0, 1);
     const rise = (0.95 - p.t) * 20;
@@ -371,16 +539,30 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  ctx.restore(); // end screen shake — HUD stays steady
+  ctx.restore(); // end screen shake
 
   renderHUD();
+  if (state.banner) renderBanner();
+  UI.drawChips(ctx);
   renderCrosshair();
+}
+
+function renderBanner() {
+  const t = state.banner.t;
+  ctx.globalAlpha = clamp(t * 1.5, 0, 1);
+  outlineText(state.banner.text, W / 2, 78, "#ffd45e",
+    "bold 18px 'Courier New', monospace", "center");
+  if (state.banner.sub) {
+    outlineText(state.banner.sub, W / 2, 100, "#f0ead2",
+      "bold 9px 'Courier New', monospace", "center");
+  }
+  ctx.globalAlpha = 1;
 }
 
 function renderHUD() {
   // Money
   ctx.fillStyle = "#15140e";
-  ctx.fillRect(6, 6, 74, 14);
+  ctx.fillRect(6, 6, 84, 14);
   ctx.fillStyle = "#d9a441";
   ctx.fillRect(9, 9, 8, 8);
   ctx.fillStyle = "#f4d47c";
@@ -389,8 +571,38 @@ function renderHUD() {
   ctx.fillRect(12, 11, 2, 4);
   outlineText("\u00a3" + state.money, 21, 9, "#ffd45e", "bold 10px 'Courier New', monospace");
 
+  // Combo, under the money
+  if (state.combo > 1) {
+    outlineText("COMBO ×" + comboMult().toFixed(1), 6, 24, "#ffef9e",
+      "bold 8px 'Courier New', monospace");
+  }
+
+  // Wind, top centre
+  if (SITE().wind && Math.abs(state.wind) > 0.8) {
+    const wx = W / 2, wy = 8;
+    outlineText("WIND", wx, wy, "#cfd8e8", "bold 8px 'Courier New', monospace", "center");
+    const len = clamp(Math.abs(state.wind) * 2.4, 4, 24);
+    const dir = Math.sign(state.wind);
+    ctx.strokeStyle = "#15140e";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(wx - dir * len / 2, wy + 14);
+    ctx.lineTo(wx + dir * len / 2, wy + 14);
+    ctx.stroke();
+    ctx.strokeStyle = "#dfe8f5";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(wx - dir * len / 2, wy + 14);
+    ctx.lineTo(wx + dir * len / 2, wy + 14);
+    ctx.moveTo(wx + dir * (len / 2 - 3), wy + 11);
+    ctx.lineTo(wx + dir * len / 2, wy + 14);
+    ctx.lineTo(wx + dir * (len / 2 - 3), wy + 17);
+    ctx.stroke();
+  }
+
   // Shells
-  for (let i = 0; i < state.maxShells; i++) {
+  const gun = GUN();
+  for (let i = 0; i < gun.shells; i++) {
     const x = W - 14 - i * 9;
     const spent = i >= state.shells;
     ctx.fillStyle = "#15140e";
@@ -400,30 +612,36 @@ function renderHUD() {
     ctx.fillStyle = spent ? "#4a4e56" : "#d9a441";
     ctx.fillRect(x, 17, 6, 4);
   }
-  // Reload progress bar
   if (state.reloading > 0) {
-    const frac = 1 - state.reloading / 0.9;
+    const frac = 1 - state.reloading / gun.reload;
     ctx.fillStyle = "#15140e";
     ctx.fillRect(W - 34, 24, 28, 5);
     ctx.fillStyle = "#ffd45e";
     ctx.fillRect(W - 33, 25, Math.round(26 * frac), 3);
   }
 
-  // Session stats, bottom-right
+  // XP bar along the bottom
+  ctx.fillStyle = "#15140e";
+  ctx.fillRect(6, H - 8, W - 12, 5);
+  ctx.fillStyle = "#8a63c9";
+  ctx.fillRect(7, H - 7, Math.round((W - 14) * clamp(state.xp / xpNeeded(state.level), 0, 1)), 3);
+  outlineText("LVL " + state.level, 6, H - 19, "#c9aef5",
+    "bold 8px 'Courier New', monospace");
+
   ctx.globalAlpha = 0.75;
-  outlineText("BIRDS " + state.birdsShot, W - 6, H - 12, "#e8e2cd",
+  outlineText("BIRDS " + state.birdsShot, W - 6, H - 19, "#e8e2cd",
     "8px 'Courier New', monospace", "right");
   ctx.globalAlpha = 1;
 
   if (Sfx.muted) {
     ctx.globalAlpha = 0.75;
-    outlineText("MUTED", 6, H - 12, "#e8e2cd", "8px 'Courier New', monospace");
+    outlineText("MUTED", 188, 8, "#e8e2cd", "8px 'Courier New', monospace");
     ctx.globalAlpha = 1;
   }
 }
 
 function renderCrosshair() {
-  // On touch screens the crosshair only flashes where you tapped
+  if (UI.open) return;
   if (IS_TOUCH && state.tapMarker <= 0 && state.shells > 0) return;
   const { x, y } = state.aim;
   ctx.strokeStyle = "#15140e";
@@ -438,7 +656,6 @@ function renderCrosshair() {
   ctx.stroke();
   ctx.fillStyle = state.shells > 0 ? "#f2f2ea" : "#e0574a";
   ctx.fillRect(x - 0.5, y - 0.5, 1, 1);
-  // ticks
   ctx.fillRect(x - 9, y - 0.5, 3, 1);
   ctx.fillRect(x + 6, y - 0.5, 3, 1);
   ctx.fillRect(x - 0.5, y - 9, 1, 3);
@@ -454,8 +671,6 @@ function renderCrosshair() {
 const Game = { bg: null };
 
 function resize() {
-  // Integer scaling for crisp pixels where there's room; fractional
-  // fill-the-screen scaling on small (phone) displays.
   let scale = Math.min(window.innerWidth / W, window.innerHeight / H);
   scale = scale >= 2 ? Math.floor(scale) : Math.max(scale, 0.5);
   canvas.style.width = W * scale + "px";
@@ -482,27 +697,41 @@ function start() {
   if (Sfx.ctx && Sfx.ctx.state === "suspended") Sfx.ctx.resume();
   state.started = true;
   overlay.style.display = "none";
+  state.banner = { text: SITE().name.toUpperCase(), sub: SITE().desc, t: 2.2 };
+}
+
+function pointerDown(x, y) {
+  if (UI.pointer(x, y)) { return; }
+  shoot();
 }
 
 canvas.addEventListener("mousemove", (e) => { state.aim = toCanvasCoords(e); });
 canvas.addEventListener("mousedown", (e) => {
-  if (e.button === 0 && !IS_TOUCH) shoot();
+  if (e.button === 0 && !IS_TOUCH) {
+    const p = toCanvasCoords(e);
+    state.aim = p;
+    pointerDown(p.x, p.y);
+  }
 });
 canvas.addEventListener("touchstart", (e) => {
   e.preventDefault();
   if (!state.started) { start(); return; }
-  // iOS suspends audio when the tab is backgrounded — wake it on touch
   if (Sfx.ctx && Sfx.ctx.state === "suspended") Sfx.ctx.resume();
-  state.aim = toCanvasCoords(e.changedTouches[0]);
-  shoot();
+  const p = toCanvasCoords(e.changedTouches[0]);
+  state.aim = p;
+  pointerDown(p.x, p.y);
 }, { passive: false });
 canvas.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
 overlay.addEventListener("click", start);
 overlay.addEventListener("touchend", (e) => { e.preventDefault(); start(); }, { passive: false });
+
 window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   const k = e.key.toLowerCase();
   if (k === "r") startReload();
+  if (k === "g" && state.started) UI.toggle("guns");
+  if (k === "s" && state.started) UI.toggle("sites");
+  if (k === "escape") UI.close();
   if (k === "m") {
     Sfx.muted = !Sfx.muted;
     state.dirty = true;
@@ -517,7 +746,7 @@ document.addEventListener("visibilitychange", () => {
 
 loadSave();
 resize();
-Game.bg = buildHomeField(W, H);
+Game.bg = BG_BUILDERS[SITE().bg](W, H);
 
 let lastT = performance.now();
 function frame(now) {
@@ -529,28 +758,41 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
+// ---------------------------------------------------------------- test hooks
 // ?autostart=1 skips the title overlay (used for automated screenshots)
 const urlParams = new URLSearchParams(location.search);
 if (urlParams.has("autostart")) start();
+// ?site=brow forces a site for screenshots (grants it temporarily)
+if (urlParams.has("site") && SITES[urlParams.get("site")]) {
+  if (!state.sitesOwned.includes(urlParams.get("site"))) {
+    state.sitesOwned.push(urlParams.get("site"));
+  }
+  travelTo(urlParams.get("site"));
+}
 // ?sim=N synchronously fast-forwards N seconds (deterministic screenshots/tests)
 if (urlParams.has("sim")) {
   start();
   const secs = parseFloat(urlParams.get("sim")) || 5;
   for (let i = 0; i < secs * 60; i++) update(1 / 60);
-  // ?testshot=1 then aims at the first flying bird and fires
+  // ?testshot=1 then aims at the first huntable flying bird and fires
   if (urlParams.has("testshot")) {
-    const target = state.birds.find((b) => b.state === "fly");
+    const target = state.birds.find(
+      (b) => b.state === "fly" && SPECIES[b.species].rarity !== "protected"
+        && b.x > 30 && b.x < W - 30);
     if (target) {
       state.aim = { x: target.x, y: target.y };
       shoot();
       for (let i = 0; i < 12; i++) update(1 / 60);
     }
   }
+  // ?menu=guns|sites opens a panel for screenshots
+  if (urlParams.has("menu")) UI.open = urlParams.get("menu");
 }
 // ?debug=1 mirrors sim state into the tab title (used for automated checks)
 if (urlParams.has("debug")) {
   setInterval(() => {
     document.title =
-      `t=${state.time.toFixed(1)} birds=${state.birds.length} shot=${state.birdsShot}`;
+      `t=${state.time.toFixed(1)} birds=${state.birds.length} shot=${state.birdsShot}` +
+      ` lvl=${state.level} money=${state.money}`;
   }, 250);
 }

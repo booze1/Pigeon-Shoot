@@ -28,9 +28,11 @@ automatically in your browser.
 
 ## Status
 
-**Milestone 1 — "It shoots"**: Home Field site, double-barrel shotgun with
-real pellet spread, feral & wood pigeons, feathers, money, autosave.
+**Milestone 2 — "It progresses"**: three sites (Home Field, The Walled
+Pasture, Foxglove Brow), four guns, XP/levels with a shop, ten bird
+species across rarity tiers, protected species with fines, combo
+multiplier, wind, and the schnauzer retrieving downed birds.
 
-Coming next (see the design doc): XP and levels, gun shop, more sites,
-rarity tiers, the dog, the business layer, and the Golden Curlew at
-Curlew Barn.
+Coming next (see the design doc): the business layer — game larder,
+butcher's contracts with offline income, taxidermy and the trophy room —
+then the Golden Curlew at Curlew Barn.
