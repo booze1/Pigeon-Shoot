@@ -223,7 +223,7 @@ function shoot() {
     state.money += value;
     state.birdsShot++;
     burstFeathers(b);
-    addPopup(b.x, b.y - 10, "+£" + value, "#ffd45e");
+    addPopup(b.x, b.y - 10, "+\u00a3" + value, "#ffd45e");
   }
 
   if (killed.length >= 1) Sfx.coin();
@@ -231,7 +231,7 @@ function shoot() {
     const bonus = 10 * (killed.length - 1);
     state.money += bonus;
     state.bestBrace = Math.max(state.bestBrace, killed.length);
-    addPopup(state.aim.x, state.aim.y - 24, "BRACE! +£" + bonus, "#ffef9e");
+    addPopup(state.aim.x, state.aim.y - 24, "BRACE! +\u00a3" + bonus, "#ffef9e");
     Sfx.brace();
   }
 
@@ -366,7 +366,7 @@ function renderHUD() {
   ctx.fillRect(10, 10, 6, 6);
   ctx.fillStyle = "#a87f2c";
   ctx.fillRect(12, 11, 2, 4);
-  outlineText("£" + state.money, 21, 9, "#ffd45e", "bold 10px 'Courier New', monospace");
+  outlineText("\u00a3" + state.money, 21, 9, "#ffd45e", "bold 10px 'Courier New', monospace");
 
   // Shells
   for (let i = 0; i < state.maxShells; i++) {
