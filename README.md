@@ -19,6 +19,10 @@ Open `index.html` in any modern browser — no build step, no server needed.
 | R | Reload |
 | M | Mute |
 
+On phones and tablets: tap the birds to shoot (with haptic feedback where
+the device supports it); the gun reloads itself when empty. Landscape
+orientation recommended.
+
 Drop two birds with one shot for a **Brace Bonus**. Money and stats save
 automatically in your browser.
 

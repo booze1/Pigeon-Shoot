@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Pigeon Slash — Home Field</title>
 <style>
   html, body {
@@ -10,17 +12,27 @@
     background: #14161c;
     overflow: hidden;
     font-family: "Courier New", monospace;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
   }
   #wrap {
     position: relative;
     display: flex; align-items: center; justify-content: center;
     height: 100%;
+    height: 100dvh;
   }
   #game {
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     cursor: none;
     background: #000;
+    touch-action: none;
+  }
+  body.touch .mouse-only { display: none; }
+  body:not(.touch) .touch-only { display: none; }
+  #rotate-hint { display: none; color: #9db2cc; margin-top: 10px; }
+  @media (orientation: portrait) {
+    body.touch #rotate-hint { display: block; }
   }
   #overlay {
     position: absolute;
@@ -59,13 +71,17 @@
     <div id="overlay">
       <h1>PIGEON SLASH</h1>
       <h2>&mdash; Home Field &mdash;</h2>
-      <p>Aim with the mouse &middot; Click to shoot</p>
-      <p>R to reload &middot; M to mute</p>
+      <p class="mouse-only">Aim with the mouse &middot; Click to shoot</p>
+      <p class="mouse-only">R to reload &middot; M to mute</p>
+      <p class="touch-only">Tap the birds to shoot</p>
+      <p class="touch-only">Tap when empty to reload</p>
       <p>Two birds, one shot = BRACE BONUS</p>
-      <p class="start">&mdash; CLICK TO START &mdash;</p>
+      <p class="start"><span class="mouse-only">&mdash; CLICK TO START &mdash;</span><span class="touch-only">&mdash; TAP TO START &mdash;</span></p>
+      <p id="rotate-hint">Turn your phone sideways for the best view</p>
     </div>
   </div>
   <script src="js/util.js"></script>
+  <script src="js/haptics.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/sprites.js"></script>
   <script src="js/background.js"></script>

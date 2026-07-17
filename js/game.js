@@ -12,6 +12,9 @@ ctx.imageSmoothingEnabled = false;
 const overlay = document.getElementById("overlay");
 const wrap = document.getElementById("wrap");
 
+const IS_TOUCH = matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+if (IS_TOUCH) document.body.classList.add("touch");
+
 // ---------------------------------------------------------------- state
 const state = {
   started: false,
@@ -32,6 +35,8 @@ const state = {
   popups: [],
   tracers: [],         // {points:[{x,y}], t}
   flash: 0,            // muzzle flash timer
+  tapMarker: 0,        // touch: brief crosshair after each tap
+  emptyTimer: 0,       // touch: auto-reload countdown when out of shells
   saveTimer: 0,
   dirty: false,
 };
@@ -175,7 +180,8 @@ function addPopup(x, y, text, color) {
 
 // ---------------------------------------------------------------- shooting
 const PELLET_COUNT = 9;
-const SPREAD_RADIUS = 13;
+// Fingers are less precise than a mouse — the cone is a touch wider on phones
+const SPREAD_RADIUS = IS_TOUCH ? 16 : 13;
 
 function shoot() {
   if (!state.started || state.reloading > 0 || state.shotCooldown > 0) return;
@@ -189,8 +195,10 @@ function shoot() {
   state.shotCooldown = 0.14;
   state.shake = 3.2;
   state.flash = 0.08;
+  state.tapMarker = 0.3;
   state.dirty = true;
   Sfx.shot();
+  Haptics.shot();
 
   // Pellet cloud around the aim point
   const pts = [];
@@ -226,13 +234,17 @@ function shoot() {
     addPopup(b.x, b.y - 10, "+\u00a3" + value, "#ffd45e");
   }
 
-  if (killed.length >= 1) Sfx.coin();
+  if (killed.length >= 1) {
+    Sfx.coin();
+    Haptics.kill();
+  }
   if (killed.length >= 2) {
     const bonus = 10 * (killed.length - 1);
     state.money += bonus;
     state.bestBrace = Math.max(state.bestBrace, killed.length);
     addPopup(state.aim.x, state.aim.y - 24, "BRACE! +\u00a3" + bonus, "#ffef9e");
     Sfx.brace();
+    Haptics.brace();
   }
 
   if (state.shells === 0) state.saveTimer = 0; // save soon after emptying the gun
@@ -249,7 +261,16 @@ function update(dt) {
   state.time += dt;
   state.shotCooldown = Math.max(0, state.shotCooldown - dt);
   state.flash = Math.max(0, state.flash - dt);
+  state.tapMarker = Math.max(0, state.tapMarker - dt);
   state.shake = Math.max(0, state.shake - dt * 14);
+
+  // On touch there's no R key: reload starts by itself shortly after emptying
+  if (IS_TOUCH && state.shells === 0 && state.reloading === 0) {
+    state.emptyTimer += dt;
+    if (state.emptyTimer > 0.55) startReload();
+  } else {
+    state.emptyTimer = 0;
+  }
 
   if (state.reloading > 0) {
     state.reloading -= dt;
@@ -402,6 +423,8 @@ function renderHUD() {
 }
 
 function renderCrosshair() {
+  // On touch screens the crosshair only flashes where you tapped
+  if (IS_TOUCH && state.tapMarker <= 0 && state.shells > 0) return;
   const { x, y } = state.aim;
   ctx.strokeStyle = "#15140e";
   ctx.lineWidth = 3;
@@ -422,7 +445,8 @@ function renderCrosshair() {
   ctx.fillRect(x - 0.5, y + 6, 1, 3);
 
   if (state.shells === 0 && state.reloading === 0 && Math.floor(state.time * 2) % 2 === 0) {
-    outlineText("RELOAD (R)", x, y + 12, "#e0574a", "bold 8px 'Courier New', monospace", "center");
+    outlineText(IS_TOUCH ? "RELOADING..." : "RELOAD (R)", x, y + 12,
+      "#e0574a", "bold 8px 'Courier New', monospace", "center");
   }
 }
 
@@ -430,8 +454,10 @@ function renderCrosshair() {
 const Game = { bg: null };
 
 function resize() {
-  const scale = Math.max(1, Math.floor(Math.min(
-    window.innerWidth / W, window.innerHeight / H)));
+  // Integer scaling for crisp pixels where there's room; fractional
+  // fill-the-screen scaling on small (phone) displays.
+  let scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  scale = scale >= 2 ? Math.floor(scale) : Math.max(scale, 0.5);
   canvas.style.width = W * scale + "px";
   canvas.style.height = H * scale + "px";
   overlay.style.width = W * scale + "px";
@@ -452,15 +478,27 @@ function toCanvasCoords(e) {
 function start() {
   if (state.started) return;
   Sfx.init();
+  Haptics.init();
+  if (Sfx.ctx && Sfx.ctx.state === "suspended") Sfx.ctx.resume();
   state.started = true;
   overlay.style.display = "none";
 }
 
 canvas.addEventListener("mousemove", (e) => { state.aim = toCanvasCoords(e); });
 canvas.addEventListener("mousedown", (e) => {
-  if (e.button === 0) shoot();
+  if (e.button === 0 && !IS_TOUCH) shoot();
 });
+canvas.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  if (!state.started) { start(); return; }
+  // iOS suspends audio when the tab is backgrounded — wake it on touch
+  if (Sfx.ctx && Sfx.ctx.state === "suspended") Sfx.ctx.resume();
+  state.aim = toCanvasCoords(e.changedTouches[0]);
+  shoot();
+}, { passive: false });
+canvas.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
 overlay.addEventListener("click", start);
+overlay.addEventListener("touchend", (e) => { e.preventDefault(); start(); }, { passive: false });
 window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   const k = e.key.toLowerCase();
