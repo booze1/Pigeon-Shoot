@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pigeon Slash — Home Field</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #14161c;
+    overflow: hidden;
+    font-family: "Courier New", monospace;
+  }
+  #wrap {
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    height: 100%;
+  }
+  #game {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: none;
+    background: #000;
+  }
+  #overlay {
+    position: absolute;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(10, 12, 18, 0.82);
+    color: #e8e2cd;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+  }
+  #overlay h1 {
+    margin: 0 0 4px 0;
+    color: #ffd45e;
+    letter-spacing: 4px;
+    text-shadow: 3px 3px 0 #3a2c10;
+  }
+  #overlay h2 {
+    margin: 0 0 24px 0;
+    font-weight: normal;
+    color: #b9c4d6;
+    letter-spacing: 2px;
+  }
+  #overlay p { margin: 3px 0; color: #cfc9b4; }
+  #overlay .start {
+    margin-top: 26px;
+    color: #ffd45e;
+    animation: blink 1.1s steps(2, start) infinite;
+  }
+  @keyframes blink { to { visibility: hidden; } }
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game" width="480" height="270"></canvas>
+    <div id="overlay">
+      <h1>PIGEON SLASH</h1>
+      <h2>&mdash; Home Field &mdash;</h2>
+      <p>Aim with the mouse &middot; Click to shoot</p>
+      <p>R to reload &middot; M to mute</p>
+      <p>Two birds, one shot = BRACE BONUS</p>
+      <p class="start">&mdash; CLICK TO START &mdash;</p>
+    </div>
+  </div>
+  <script src="js/util.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/background.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
