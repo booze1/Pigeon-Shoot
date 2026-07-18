@@ -81,9 +81,9 @@ const spreadRadius = () =>
 // A curlew is fair game only at Curlew Barn — the licensed exception
 const isProtected = (id) =>
   SPECIES[id].rarity === "protected" && !(id === "curlew" && SITE().curlewLegal);
-// Each level costs ~42% more than the last — early levels are quick,
-// the Semi-Auto at level 8 is a real campaign.
-const xpNeeded = (level) => Math.round(35 * Math.pow(1.42, level - 1));
+// Levels are meant to be earned: level 2 takes a proper session's
+// shooting, and each level costs ~35% more than the last.
+const xpNeeded = (level) => Math.round(80 * Math.pow(1.35, level - 1));
 const comboMult = () => Math.min(1 + state.combo * 0.15, 3);
 
 // ---------------------------------------------------------------- saves
@@ -938,15 +938,48 @@ canvas.addEventListener("mousedown", (e) => {
     pointerDown(p.x, p.y);
   }
 });
+// In menus, taps resolve on touch-end so a swipe can scroll the list
+// without accidentally buying anything. In the field, shots stay instant.
+let menuTouch = null;
 canvas.addEventListener("touchstart", (e) => {
   e.preventDefault();
   if (!state.started) { start(); return; }
   if (Sfx.ctx && Sfx.ctx.state === "suspended") Sfx.ctx.resume();
   const p = toCanvasCoords(e.changedTouches[0]);
+  if (state.awayReport) {
+    state.awayReport = null;
+    Sfx.click();
+    return;
+  }
+  if (UI.open) {
+    menuTouch = { x: p.x, y: p.y, lastY: p.y, moved: 0 };
+    return;
+  }
   state.aim = p;
   pointerDown(p.x, p.y);
 }, { passive: false });
-canvas.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+canvas.addEventListener("touchmove", (e) => {
+  e.preventDefault();
+  if (UI.open && menuTouch) {
+    const p = toCanvasCoords(e.changedTouches[0]);
+    UI.scrollBy(menuTouch.lastY - p.y);
+    menuTouch.moved += Math.abs(p.y - menuTouch.lastY);
+    menuTouch.lastY = p.y;
+  }
+}, { passive: false });
+canvas.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  if (UI.open && menuTouch) {
+    if (menuTouch.moved < 8) UI.pointer(menuTouch.x, menuTouch.y);
+    menuTouch = null;
+  }
+}, { passive: false });
+canvas.addEventListener("wheel", (e) => {
+  if (UI.open) {
+    e.preventDefault();
+    UI.scrollBy(e.deltaY * 0.4);
+  }
+}, { passive: false });
 overlay.addEventListener("click", start);
 overlay.addEventListener("touchend", (e) => { e.preventDefault(); start(); }, { passive: false });
 
@@ -1013,6 +1046,7 @@ if (urlParams.has("sim")) {
   // ?menu=guns|sites|estate opens a panel for screenshots
   if (urlParams.has("menu")) UI.open = urlParams.get("menu");
   if (urlParams.has("tab")) UI.tab = urlParams.get("tab");
+  if (urlParams.has("scroll")) UI.scroll = parseFloat(urlParams.get("scroll")) || 0;
 }
 // ?testbiz=1 seeds business state for screenshots/tests
 if (urlParams.has("testbiz")) {

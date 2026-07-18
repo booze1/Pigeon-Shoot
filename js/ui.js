@@ -8,6 +8,8 @@ const UI = {
   tab: "larder",       // estate tab: larder | orders | trophies
   hits: [],
   note: null,
+  scroll: 0,           // shop list scroll offset
+  maxScroll: 0,
 
   chipRects: [
     { id: "guns", label: "GUNS", x: 96, y: 6, w: 38, h: 13 },
@@ -20,12 +22,18 @@ const UI = {
   toggle(id) {
     this.open = this.open === id ? null : id;
     this.note = null;
+    this.scroll = 0;
     Sfx.click();
   },
 
   close() {
     this.open = null;
     this.note = null;
+    this.scroll = 0;
+  },
+
+  scrollBy(dy) {
+    this.scroll = clamp(this.scroll + dy, 0, this.maxScroll);
   },
 
   pointer(x, y) {
@@ -114,7 +122,7 @@ const UI = {
   // ------------------------------------------------------------ guns/sites
   drawShop(ctx) {
     this.panelFrame(ctx, this.open === "guns" ? "GUN CABINET" : "SHOOTING SITES");
-    const px = this.PX, pw = this.PW;
+    const px = this.PX, pw = this.PW, py = this.PY;
 
     const ids = this.open === "guns" ? GUN_ORDER : SITE_ORDER;
     const defs = this.open === "guns" ? GUNS : SITES;
@@ -122,8 +130,20 @@ const UI = {
     const equipped = this.open === "guns" ? state.gunId : state.siteId;
 
     const rowH = this.open === "guns" ? 42 : 52;
-    let ry = this.PY + 24;
+    const vy = py + 22;                   // list viewport
+    const vh = this.PH - 30;
+    const rowW = pw - 32;                 // leave room for the scrollbar
+    this.maxScroll = Math.max(0, ids.length * rowH - vh + 4);
+    this.scroll = clamp(this.scroll, 0, this.maxScroll);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(px + 2, vy, pw - 4, vh);
+    ctx.clip();
+
+    let ry = vy + 2 - Math.round(this.scroll);
     for (const id of ids) {
+      if (ry + rowH < vy || ry > vy + vh) { ry += rowH; continue; }
       const def = defs[id];
       const isOwned = owned.includes(id);
       const isEquipped = id === equipped;
@@ -131,9 +151,9 @@ const UI = {
       const levelOk = state.level >= def.lvl;
 
       ctx.fillStyle = isEquipped ? "#242c1c" : "#20242e";
-      ctx.fillRect(px + 8, ry, pw - 16, rowH - 6);
+      ctx.fillRect(px + 8, ry, rowW, rowH - 6);
       ctx.strokeStyle = isEquipped ? "#9fe08a" : "#3a3f4c";
-      ctx.strokeRect(px + 8.5, ry + 0.5, pw - 17, rowH - 7);
+      ctx.strokeRect(px + 8.5, ry + 0.5, rowW - 1, rowH - 7);
 
       outlineText(def.name, px + 16, ry + 5,
         isEquipped ? "#9fe08a" : "#f0ead2", "bold 9px 'Courier New', monospace");
@@ -145,11 +165,14 @@ const UI = {
           `${def.shells} shells  spread ${def.spread}  reload ${def.reload}s`,
           px + 16, ry + 27, "#8d94a5", "8px 'Courier New', monospace");
       } else {
-        const rare = def.spawn.filter(([s]) => SPECIES[s].rarity === "rare").length;
+        const rare = def.spawn.filter(([s]) =>
+          ["rare", "epic"].includes(SPECIES[s].rarity)).length;
         outlineText(rare ? "Game birds fly here" : "Everyday birds",
           px + 16, ry + 27, "#8d94a5", "8px 'Courier New', monospace");
         if (def.wind) outlineText("Windy", px + 16, ry + 37, "#7db6ff",
           "8px 'Courier New', monospace");
+        if (def.curlewLegal) outlineText("Home of the legend", px + 90, ry + 37,
+          "#ffd700", "8px 'Courier New', monospace");
       }
 
       let action, color;
@@ -166,14 +189,35 @@ const UI = {
         action = "\u00a3" + def.price;
         color = affordable ? "#ffd45e" : "#77705a";
       }
-      outlineText(action, px + pw - 20, ry + 14, color,
+      outlineText(action, px + 8 + rowW - 10, ry + 14, color,
         "bold 9px 'Courier New', monospace", "right");
 
-      this.hits.push({
-        x: px + 8, y: ry, w: pw - 16, h: rowH - 6,
-        cb: () => this.shopAction(id, def, isOwned, isEquipped, levelOk, affordable),
-      });
+      // clickable only where actually visible
+      const top = Math.max(ry, vy), bot = Math.min(ry + rowH - 6, vy + vh);
+      if (bot - top > (rowH - 6) * 0.5) {
+        this.hits.push({
+          x: px + 8, y: top, w: rowW, h: bot - top,
+          cb: () => this.shopAction(id, def, isOwned, isEquipped, levelOk, affordable),
+        });
+      }
       ry += rowH;
+    }
+    ctx.restore();
+
+    // Scrollbar + arrows (swipe or mouse-wheel also works)
+    if (this.maxScroll > 0) {
+      const sx = px + pw - 20;
+      this.button(ctx, sx, vy, 14, 14, "^", this.scroll > 0, "#cfc9b4",
+        () => this.scrollBy(-rowH));
+      this.button(ctx, sx, vy + vh - 14, 14, 14, "v",
+        this.scroll < this.maxScroll, "#cfc9b4", () => this.scrollBy(rowH));
+      const trackY = vy + 18, trackH = vh - 36;
+      ctx.fillStyle = "#20242e";
+      ctx.fillRect(sx + 5, trackY, 4, trackH);
+      const thumbH = Math.max(14, trackH * vh / (ids.length * rowH));
+      const thumbY = trackY + (trackH - thumbH) * (this.scroll / this.maxScroll);
+      ctx.fillStyle = "#8d94a5";
+      ctx.fillRect(sx + 5, Math.round(thumbY), 4, Math.round(thumbH));
     }
     this.drawNote(ctx);
   },
@@ -324,14 +368,18 @@ const UI = {
 
   drawLarder(ctx, cy) {
     const px = this.PX, pw = this.PW;
-    const ids = Biz.larderIds();
+    // Rarest first so a lone legendary is never hidden below the pigeons
+    const RANK = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4, protected: 5 };
+    const ids = Biz.larderIds().sort((a, b) =>
+      RANK[SPECIES[a].rarity] - RANK[SPECIES[b].rarity] ||
+      state.larder[b] - state.larder[a]);
 
     if (!ids.length) {
       outlineText("The larder is empty — go shoot something.", px + pw / 2, cy + 10,
         "#8d94a5", "8px 'Courier New', monospace", "center");
     }
     let y = cy;
-    for (const id of ids.slice(0, 8)) {
+    for (const id of ids.slice(0, 9)) {
       const sp = SPECIES[id];
       const n = state.larder[id];
       outlineText(n + "× " + sp.name, px + 16, y + 2, RARITY_COLORS[sp.rarity],
@@ -350,7 +398,7 @@ const UI = {
           Sfx.click();
         });
       }
-      y += 15;
+      y += 14;
     }
 
     // Footer: sell everything + contract status
