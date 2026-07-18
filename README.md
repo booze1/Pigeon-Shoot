@@ -28,13 +28,14 @@ automatically in your browser.
 
 ## Status
 
-**Milestone 3 — "It's a business"**: shot birds go to the Game Larder;
-sell fresh, sign the Butcher's Contract (auto-sells at 150% every 20s,
-even while the game is closed), fulfil rotating village orders for ~2.2x,
-or mount rare birds in the taxidermy workshop — sell mounts for 8x or
-display them for a permanent +6% income buff each. "While you were away"
-report on return. Levelling curve is now exponential.
+**Milestone 4 — "The legend"**: all six sites are open, ending at
+**Curlew Barn**, the only place the **Golden Curlew** ever appears — a
+haunting call, a golden light sweep, the world slows, and it makes one
+fast pass. Epic-tier birds (snipe, woodcock, kingfisher) jink through
+the Farmhouse Lawn; Stonebeck Hamlet is dense, high-value rooftop
+shooting; the Longfowler and gilded Curlew Gun top the cabinet. A perk
+tree (Marksman / Poacher's Eye / Estate Manager, one point per level)
+and the bird Almanac round out the ESTATE. Mounting the Golden Curlew
+and displaying it grants +25% to all income, forever.
 
-Coming next (see the design doc): the Farmhouse Lawn and Stonebeck
-Hamlet sites, the perk tree, the almanac — and the Golden Curlew at
-Curlew Barn.
+All four design-doc milestones are complete.

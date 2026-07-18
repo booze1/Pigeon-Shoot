@@ -178,12 +178,61 @@ const SHAPE_PHEASANT = {
   ],
 };
 
+// The curlew: unmistakable long, down-curved bill. The golden variant is
+// the game's legendary.
+const SHAPE_CURLEW = {
+  w: 18, h: 11,
+  frames: [
+    [
+      "....llll..........",
+      "...llllll.........",
+      "...glllll.........",
+      "..gggll.....gg....",
+      "dd.gggggggggge....",
+      "ddgggggggggggoo...",
+      ".dggppppppggg..oo.",
+      "..ggppppppg......o",
+      "...gppppp.........",
+      "....ppp...........",
+      "..................",
+    ],
+    [
+      "..................",
+      "..................",
+      "....lllllll.......",
+      "...glllllllggg....",
+      "dd.ggllllllggge...",
+      "ddgggggggggggoo...",
+      ".dggppppppggg..oo.",
+      "..ggppppppg......o",
+      "...gppppp.........",
+      "....ppp...........",
+      "..................",
+    ],
+    [
+      "..................",
+      "..................",
+      "..................",
+      "...ggggg....gg....",
+      "dd.gggggggggge....",
+      "ddgggggggggggoo...",
+      ".dgglllllllgg..oo.",
+      "..glllllllg......o",
+      "....llllll........",
+      ".....lll..........",
+      "..................",
+    ],
+  ],
+};
+
 // ---------------------------------------------------------------- species
-// rarity: common / uncommon / rare / protected. Protected birds cost a fine.
+// rarity: common / uncommon / rare / epic / legendary / protected.
 const RARITY_COLORS = {
   common: "#ffd45e",
   uncommon: "#9fe08a",
   rare: "#7db6ff",
+  epic: "#c792ea",
+  legendary: "#ffd700",
   protected: "#e0574a",
 };
 
@@ -266,6 +315,46 @@ const SPECIES = {
     palette: {
       g: "#e6dabd", l: "#f5efdd", p: "#fbf8ef", d: "#cdb996",
       o: "#b7a175", e: "#1a150e",
+    },
+  },
+  snipe: {
+    name: "Snipe", shape: SHAPE_DUCK, rarity: "epic", jink: true,
+    value: 34, xp: 26, speed: [110, 160], band: [70, 185], scales: [1.2, 1.5],
+    palette: {
+      b: "#6d5c40", l: "#c9b98c", h: "#59492f", e: "#100e08",
+      o: "#4d4434", w: "#e9e2c8", d: "#463a26",
+    },
+  },
+  woodcock: {
+    name: "Woodcock", shape: SHAPE_GAMEBIRD, rarity: "epic", jink: true,
+    value: 40, xp: 30, speed: [100, 140], band: [90, 190], scales: [1.4, 1.7],
+    palette: {
+      g: "#8a6844", l: "#c2a173", p: "#a3805a", d: "#5b432c",
+      o: "#584a38", e: "#120e08",
+    },
+  },
+  kingfisher: {
+    name: "Kingfisher", shape: SHAPE_PIGEON, rarity: "epic", jink: true,
+    value: 60, xp: 40, speed: [130, 180], band: [110, 195], scales: [1.1, 1.4],
+    palette: {
+      d: "#0f5e8f", g: "#1f8dc9", l: "#5fc4e8", w: "#eef6f9",
+      o: "#2b2b28", e: "#0c0c0a", p: "#d97f3c",
+    },
+  },
+  curlew: {
+    name: "Curlew", shape: SHAPE_CURLEW, rarity: "protected",
+    value: 30, xp: 22, fine: 40, speed: [55, 90], band: [45, 150], scales: [1.7, 2],
+    palette: {
+      g: "#8a7454", l: "#b3a281", p: "#d8cfb8", d: "#5c4c36",
+      o: "#4a4038", e: "#14100c",
+    },
+  },
+  goldcurlew: {
+    name: "Golden Curlew", shape: SHAPE_CURLEW, rarity: "legendary",
+    value: 400, xp: 300, speed: [150, 185], band: [55, 125], scales: [2.2, 2.4],
+    palette: {
+      g: "#d9a83f", l: "#f0cc6e", p: "#f7e9b8", d: "#a67c22",
+      o: "#6b5a2c", e: "#1a1408",
     },
   },
 };

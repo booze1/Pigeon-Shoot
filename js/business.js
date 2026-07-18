@@ -12,12 +12,18 @@ const Biz = {
   TAXI_LVL: 5,
   TAXI_TIME: 4 * 60e3,          // 4 minutes per mount
   TAXI_SELL_MULT: 8,
-  TROPHY_BUFF: 0.06,            // +6% all income per displayed trophy
+  TROPHY_BUFFS: { rare: 0.06, epic: 0.09, legendary: 0.25 },
   ORDER_GAP: 60e3,              // pause between orders
   MAX_OFFLINE: 8 * 3600e3,      // idle progress caps at 8 hours
 
+  trophyBuff(id) {
+    return this.TROPHY_BUFFS[SPECIES[id].rarity] || 0;
+  },
+
   buffMult() {
-    return 1 + state.trophies.length * this.TROPHY_BUFF;
+    let m = 1 + (state.perks ? state.perks.estate * 0.05 : 0);
+    for (const id of state.trophies) m += this.trophyBuff(id);
+    return m;
   },
 
   // ---------------------------------------------------------------- larder
@@ -70,7 +76,8 @@ const Biz = {
   // ---------------------------------------------------------------- taxidermy
   canMount(id) {
     return state.taxidermyOwned && !state.mounting && !state.mountReady &&
-      SPECIES[id].rarity === "rare" && state.larder[id] > 0;
+      this.TROPHY_BUFFS[SPECIES[id].rarity] !== undefined &&
+      state.larder[id] > 0;
   },
 
   startMount(id) {
@@ -170,7 +177,9 @@ const Biz = {
       }
       let sold = 0, gain = 0, guard = 0;
       while (now >= state.contractNextAt && guard++ < 3000) {
-        const ids = this.larderIds();
+        // The butcher never touches a legendary — that bird is yours
+        const ids = this.larderIds().filter(
+          (i) => SPECIES[i].rarity !== "legendary");
         if (!ids.length) {
           state.contractNextAt = now + this.CONTRACT_INTERVAL;
           break;

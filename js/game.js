@@ -65,11 +65,22 @@ const state = {
   order: null,
   nextOrderAt: 0,
   awayReport: null,    // lines shown on return after time away
+  // milestone 4
+  perkPoints: 0,
+  perks: { marksman: 0, poacher: 0, estate: 0 },
+  killsBySpecies: {},
+  goldenTimer: 0,      // seconds at Curlew Barn until the legend appears
+  goldenFx: 0,         // golden light sweep timer
+  timeScale: 1,        // slow-mo during the legend's entrance
 };
 
 const GUN = () => GUNS[state.gunId];
 const SITE = () => SITES[state.siteId];
-const spreadRadius = () => GUN().spread + (IS_TOUCH ? 3 : 0);
+const spreadRadius = () =>
+  GUN().spread * (1 - 0.04 * state.perks.marksman) + (IS_TOUCH ? 3 : 0);
+// A curlew is fair game only at Curlew Barn — the licensed exception
+const isProtected = (id) =>
+  SPECIES[id].rarity === "protected" && !(id === "curlew" && SITE().curlewLegal);
 // Each level costs ~42% more than the last — early levels are quick,
 // the Semi-Auto at level 8 is a real campaign.
 const xpNeeded = (level) => Math.round(35 * Math.pow(1.42, level - 1));
@@ -105,6 +116,14 @@ function loadSave() {
     state.trophies = Array.isArray(s.trophies) ? s.trophies.filter((t) => SPECIES[t]) : [];
     state.order = s.order && Array.isArray(s.order.items) ? s.order : null;
     state.nextOrderAt = s.nextOrderAt || 0;
+    state.perkPoints = s.perkPoints || 0;
+    if (s.perks && typeof s.perks === "object") {
+      for (const k of ["marksman", "poacher", "estate"]) {
+        state.perks[k] = clamp(s.perks[k] || 0, 0, 5);
+      }
+    }
+    state.killsBySpecies =
+      s.killsBySpecies && typeof s.killsBySpecies === "object" ? s.killsBySpecies : {};
     // Catch up on everything that happened while the game was closed
     const lastSeen = s.lastSeen || Date.now();
     const away = Math.min(Date.now() - lastSeen, Biz.MAX_OFFLINE);
@@ -152,6 +171,9 @@ function writeSave() {
       trophies: state.trophies,
       order: state.order,
       nextOrderAt: state.nextOrderAt,
+      perkPoints: state.perkPoints,
+      perks: state.perks,
+      killsBySpecies: state.killsBySpecies,
       lastSeen: Date.now(),
     }));
   } catch (e) { /* storage unavailable */ }
@@ -179,13 +201,16 @@ function travelTo(id) {
   Dog.reset();
   Game.bg = BG_BUILDERS[SITE().bg](W, H);
   state.banner = { text: SITE().name.toUpperCase(), sub: SITE().desc, t: 2.2 };
+  state.goldenTimer = id === "barn" ? rand(50, 100) : 0;
+  state.timeScale = 1;
+  state.goldenFx = 0;
   state.dirty = true;
   state.saveTimer = 0;
 }
 
 // ---------------------------------------------------------------- birds
 function spawnBird(forceSpecies, forceY, forceDir) {
-  const speciesId = forceSpecies || weightedPick(SITE().spawn);
+  const speciesId = forceSpecies || pickSpecies();
   const sp = SPECIES[speciesId];
   const dir = forceDir !== undefined ? forceDir : (Math.random() < 0.5 ? 1 : -1);
   const scale = rand(sp.scales[0], sp.scales[1]);
@@ -207,11 +232,23 @@ function spawnBird(forceSpecies, forceY, forceDir) {
     vy: 0,
     rot: 0,
     vr: 0,
+    jinkT: rand(0.2, 0.7),
+    jinkV: 0,
   });
 }
 
+// Poacher's Eye boosts the odds of rare and epic birds turning up
+function pickSpecies() {
+  const boost = 1 + 0.08 * state.perks.poacher;
+  const pairs = SITE().spawn.map(([id, w]) => {
+    const r = SPECIES[id].rarity;
+    return [id, r === "rare" || r === "epic" ? w * boost : w];
+  });
+  return weightedPick(pairs);
+}
+
 function spawnWave() {
-  const id = weightedPick(SITE().spawn);
+  const id = pickSpecies();
   const sp = SPECIES[id];
   spawnBird(id);
   // Ducks fly in lines; pigeons sometimes come in pairs
@@ -233,11 +270,26 @@ const FLAP_SEQ = [0, 1, 2, 1];
 function updateBird(b, dt) {
   if (b.state === "fly") {
     b.x += b.speed * b.dir * dt;
+    // Epics jink: their flight line lurches unpredictably
+    if (SPECIES[b.species].jink) {
+      b.jinkT -= dt;
+      if (b.jinkT <= 0) {
+        b.jinkT = rand(0.25, 0.7);
+        b.jinkV = rand(-55, 55);
+      }
+      b.baseY = clamp(b.baseY + b.jinkV * dt, 30, 200);
+    }
     b.y = b.baseY + Math.sin(state.time * b.bobFreq + b.phase) * b.bobAmp;
     b.frameTimer += dt;
     const frameDur = 1 / 11;
     b.frame = FLAP_SEQ[Math.floor(b.frameTimer / frameDur) % FLAP_SEQ.length];
-    return b.x > -40 * b.scale && b.x < W + 40 * b.scale;
+    if (b.x <= -40 * b.scale || b.x >= W + 40 * b.scale) {
+      if (b.species === "goldcurlew") {
+        addPopup(W / 2, 60, "The Golden Curlew escapes...", "#c9b98a");
+      }
+      return false;
+    }
+    return true;
   }
   // dead: tumble and fall
   b.vy += 240 * dt;
@@ -247,7 +299,7 @@ function updateBird(b, dt) {
   if (b.y >= GROUND_Y) {
     Sfx.thud();
     groundPuff(b.x, GROUND_Y);
-    if (SPECIES[b.species].rarity !== "protected") {
+    if (!isProtected(b.species)) {
       state.corpses.push({ x: clamp(b.x, 10, W - 10), species: b.species, scale: b.scale, t: 25 });
     }
     return false;
@@ -258,6 +310,21 @@ function updateBird(b, dt) {
 function drawBird(b) {
   const sp = SPECIES[b.species];
   const spr = SPRITES[b.species][b.state === "fly" ? b.frame : 1];
+  // The legend glows
+  if (b.species === "goldcurlew") {
+    const grad = ctx.createRadialGradient(b.x, b.y, 2, b.x, b.y, 26);
+    grad.addColorStop(0, "rgba(255,220,110,0.55)");
+    grad.addColorStop(1, "rgba(255,220,110,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(b.x - 26, b.y - 26, 52, 52);
+    // drifting glints
+    for (let i = 0; i < 3; i++) {
+      const gx = b.x - b.dir * (10 + i * 9) + Math.sin(state.time * 7 + i * 2) * 4;
+      const gy = b.y + Math.cos(state.time * 5 + i * 3) * 6;
+      ctx.fillStyle = i % 2 ? "#ffe9a0" : "#fff6d8";
+      ctx.fillRect(Math.round(gx), Math.round(gy), 1, 1);
+    }
+  }
   ctx.save();
   ctx.translate(Math.round(b.x), Math.round(b.y));
   if (b.state === "dead") ctx.rotate(b.rot);
@@ -265,7 +332,7 @@ function drawBird(b) {
   ctx.drawImage(spr, -sp.shape.w / 2, -sp.shape.h / 2);
   ctx.restore();
   // Protected birds carry a blinking warning so you learn to hold fire
-  if (b.state === "fly" && sp.rarity === "protected" &&
+  if (b.state === "fly" && isProtected(b.species) &&
       Math.floor(state.time * 3) % 2 === 0) {
     outlineText("!", Math.round(b.x), Math.round(b.y - sp.shape.h * b.scale / 2 - 10),
       "#e0574a", "bold 9px 'Courier New', monospace", "center");
@@ -345,6 +412,7 @@ function grantXp(amount) {
     leveled = true;
   }
   if (leveled) {
+    state.perkPoints++;
     const unlocks = [];
     for (const id of GUN_ORDER) {
       if (GUNS[id].lvl === state.level) unlocks.push(GUNS[id].name);
@@ -354,8 +422,9 @@ function grantXp(amount) {
     }
     state.banner = {
       text: "LEVEL " + state.level + "!",
-      sub: unlocks.length ? "Now available: " + unlocks.join(", ") : "",
-      t: 2.4,
+      sub: (unlocks.length ? "Now available: " + unlocks.join(", ") + "  ·  " : "") +
+        "+1 perk point (ESTATE > PERKS)",
+      t: 2.6,
     };
     Sfx.fanfare();
     Haptics.brace();
@@ -417,7 +486,7 @@ function shoot() {
     b.vr = rand(-7, 7);
     burstFeathers(b);
     const sp = SPECIES[b.species];
-    if (sp.rarity === "protected") {
+    if (isProtected(b.species)) {
       const fine = sp.fine;
       state.money = Math.max(0, state.money - fine);
       state.combo = 0;
@@ -429,6 +498,17 @@ function shoot() {
     paidKills++;
     state.combo++;
     state.birdsShot++;
+    state.killsBySpecies[b.species] = (state.killsBySpecies[b.species] || 0) + 1;
+    if (b.species === "goldcurlew") {
+      state.banner = {
+        text: "THE GOLDEN CURLEW!",
+        sub: "The legend is yours — guard it in the larder",
+        t: 3,
+      };
+      state.timeScale = 1;
+      Sfx.fanfare();
+      Haptics.brace();
+    }
     const mult = comboMult();
     // A tip in the field; the carcass goes to the larder where the real
     // money is (sell, contract, orders, taxidermy).
@@ -463,6 +543,16 @@ function startReload() {
   Sfx.reloadStart();
 }
 
+// ---------------------------------------------------------------- the legend
+function launchGoldenCurlew() {
+  spawnBird("goldcurlew");
+  state.goldenFx = 1.8;
+  state.timeScale = 0.35;        // the world holds its breath
+  Sfx.curlew();
+  Haptics.kill();
+  state.banner = { text: "", sub: "...a golden call on the wind...", t: 1.6 };
+}
+
 // ---------------------------------------------------------------- update
 function update(dt) {
   UI.update(dt);
@@ -490,6 +580,20 @@ function update(dt) {
   state.flash = Math.max(0, state.flash - dt);
   state.tapMarker = Math.max(0, state.tapMarker - dt);
   state.shake = Math.max(0, state.shake - dt * 14);
+  state.goldenFx = Math.max(0, state.goldenFx - dt);
+  // Slow-mo eases back to full speed
+  if (state.timeScale < 1) {
+    state.timeScale = Math.min(1, state.timeScale + dt * 0.45);
+  }
+
+  // The Golden Curlew only ever visits Curlew Barn
+  if (state.siteId === "barn") {
+    state.goldenTimer -= dt;
+    if (state.goldenTimer <= 0) {
+      state.goldenTimer = rand(75, 150);
+      launchGoldenCurlew();
+    }
+  }
 
   // Wind drifts slowly toward a wandering target
   if (SITE().wind) {
@@ -609,6 +713,20 @@ function render() {
     outlineText(p.text, Math.round(p.x), Math.round(p.y - rise), p.color,
       "bold 9px 'Courier New', monospace", "center");
     ctx.globalAlpha = 1;
+  }
+
+  // Golden light sweep announcing the legend
+  if (state.goldenFx > 0) {
+    const a = clamp(state.goldenFx / 1.8, 0, 1);
+    ctx.fillStyle = "rgba(255,200,90," + (0.18 * a).toFixed(3) + ")";
+    ctx.fillRect(0, 0, W, H);
+    const sweepX = (1 - state.goldenFx / 1.8) * (W + 240) - 120;
+    const grad = ctx.createLinearGradient(sweepX - 60, 0, sweepX + 60, 0);
+    grad.addColorStop(0, "rgba(255,236,170,0)");
+    grad.addColorStop(0.5, "rgba(255,236,170," + (0.28 * a).toFixed(3) + ")");
+    grad.addColorStop(1, "rgba(255,236,170,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(sweepX - 60, 0, 120, H);
   }
 
   ctx.restore(); // end screen shake
@@ -859,7 +977,7 @@ let lastT = performance.now();
 function frame(now) {
   const dt = clamp((now - lastT) / 1000, 0, 0.05);
   lastT = now;
-  if (state.started) update(dt);
+  if (state.started) update(dt * state.timeScale);
   render();
   requestAnimationFrame(frame);
 }
@@ -905,6 +1023,16 @@ if (urlParams.has("testbiz")) {
   state.larder = { wood: 7, feral: 4, duck: 3, pheasant: 2 };
   state.mountReady = "pheasant";
   Biz.genOrder(Date.now());
+}
+// ?golden=1 launches the Golden Curlew immediately (screenshots/tests)
+if (urlParams.has("golden")) {
+  start();
+  launchGoldenCurlew();
+  for (let i = 0; i < 30; i++) update(1 / 60);
+}
+// ?perkpts=N grants perk points for testing the perks tab
+if (urlParams.has("perkpts")) {
+  state.perkPoints = parseInt(urlParams.get("perkpts"), 10) || 3;
 }
 // ?debug=1 mirrors sim state into the tab title (used for automated checks)
 if (urlParams.has("debug")) {

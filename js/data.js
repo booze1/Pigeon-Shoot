@@ -19,8 +19,16 @@ const GUNS = {
     name: "Semi-Auto", desc: "Fast follow-ups, looser spread.",
     price: 1000, lvl: 8, shells: 6, pellets: 8, spread: 16, reload: 1.1, cooldown: 0.15,
   },
+  longfowler: {
+    name: "The Longfowler", desc: "One colossal cloud. Brace-hunter's gun.",
+    price: 2500, lvl: 9, shells: 1, pellets: 18, spread: 26, reload: 1.7, cooldown: 0.2,
+  },
+  curlewgun: {
+    name: "The Curlew Gun", desc: "Gilded, tight and true. Fit for a legend.",
+    price: 6000, lvl: 12, shells: 3, pellets: 12, spread: 8, reload: 0.55, cooldown: 0.11,
+  },
 };
-const GUN_ORDER = ["sbs", "ou", "pump", "semi"];
+const GUN_ORDER = ["sbs", "ou", "pump", "semi", "longfowler", "curlewgun"];
 
 // ---------------------------------------------------------------- sites
 // spawn: [speciesId, weight] pairs. interval: seconds between spawns.
@@ -46,8 +54,32 @@ const SITES = {
             ["partridge", 17], ["pheasant", 15], ["grouse", 10],
             ["lapwing", 5], ["owl", 3]],
   },
+  lawn: {
+    name: "The Farmhouse Lawn", desc: "Shoot from the deckchair, pint in hand.",
+    price: 1500, lvl: 8, bg: "lawn", wind: false,
+    interval: [0.8, 1.8],
+    spawn: [["wood", 16], ["feral", 12], ["jackdaw", 10], ["duck", 14],
+            ["snipe", 14], ["woodcock", 11], ["kingfisher", 7],
+            ["owl", 4], ["lapwing", 3]],
+  },
+  hamlet: {
+    name: "Stonebeck Hamlet", desc: "Over the rooftops at dusk. Busy skies.",
+    price: 3200, lvl: 10, bg: "hamlet", wind: false,
+    interval: [0.55, 1.4],
+    spawn: [["wood", 15], ["feral", 12], ["jackdaw", 12], ["crow", 12],
+            ["duck", 12], ["pheasant", 10], ["partridge", 8],
+            ["snipe", 6], ["woodcock", 5],
+            ["owl", 5], ["lapwing", 4], ["curlew", 4]],
+  },
+  barn: {
+    name: "Curlew Barn", desc: "Golden hour, forever. Home of the legend.",
+    price: 8000, lvl: 12, bg: "barn", wind: true, curlewLegal: true,
+    interval: [0.9, 2.0],
+    spawn: [["wood", 14], ["crow", 12], ["grouse", 16], ["partridge", 14],
+            ["pheasant", 12], ["snipe", 8], ["curlew", 12], ["owl", 4]],
+  },
 };
-const SITE_ORDER = ["home", "pasture", "brow"];
+const SITE_ORDER = ["home", "pasture", "brow", "lawn", "hamlet", "barn"];
 
 function weightedPick(pairs) {
   let total = 0;

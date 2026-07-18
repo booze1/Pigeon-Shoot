@@ -221,29 +221,105 @@ const UI = {
     const tabs = [
       ["larder", "LARDER"],
       ["orders", "ORDERS"],
-      ["trophies", "TROPHIES"],
+      ["trophies", "TROPHY"],
+      ["perks", "PERKS"],
+      ["almanac", "BIRDS"],
     ];
-    let tx = px + 10;
+    let tx = px + 8;
     for (const [id, label] of tabs) {
       const active = this.tab === id;
-      const tw = 78;
+      const tw = 73;
       ctx.fillStyle = active ? "#3a2f14" : "#20242e";
       ctx.fillRect(tx, py + 22, tw, 15);
       ctx.strokeStyle = active ? "#ffd45e" : "#3a3f4c";
       ctx.strokeRect(tx + 0.5, py + 22.5, tw - 1, 14);
-      outlineText(label, tx + tw / 2, py + 25,
+      let tag = label;
+      if (id === "perks" && state.perkPoints > 0) tag = label + "+" + state.perkPoints;
+      outlineText(tag, tx + tw / 2, py + 25,
         active ? "#ffd45e" : "#cfc9b4", "bold 8px 'Courier New', monospace", "center");
       const tid = id;
       this.hits.push({ x: tx, y: py + 22, w: tw, h: 15,
         cb: () => { this.tab = tid; Sfx.click(); } });
-      tx += tw + 6;
+      tx += tw + 4;
     }
 
     const cy = py + 44;
     if (this.tab === "larder") this.drawLarder(ctx, cy);
     else if (this.tab === "orders") this.drawOrders(ctx, cy);
+    else if (this.tab === "perks") this.drawPerks(ctx, cy);
+    else if (this.tab === "almanac") this.drawAlmanac(ctx, cy);
     else this.drawTrophies(ctx, cy);
     this.drawNote(ctx);
+  },
+
+  // ------------------------------------------------------------ perks
+  drawPerks(ctx, cy) {
+    const px = this.PX, pw = this.PW;
+    outlineText("Points to spend: " + state.perkPoints, px + 16, cy,
+      state.perkPoints > 0 ? "#ffd45e" : "#8d94a5",
+      "bold 9px 'Courier New', monospace");
+    const perks = [
+      ["marksman", "Marksman", "Tighter pellet spread (-4% per rank)"],
+      ["poacher", "Poacher's Eye", "Rare & epic birds turn up more (+8% per rank)"],
+      ["estate", "Estate Manager", "All income up (+5% per rank)"],
+    ];
+    let y = cy + 18;
+    for (const [id, name, desc] of perks) {
+      const rank = state.perks[id];
+      outlineText(name, px + 16, y, "#f0ead2", "bold 9px 'Courier New', monospace");
+      outlineText(desc, px + 16, y + 12, "#8d94a5", "8px 'Courier New', monospace");
+      // rank pips
+      for (let i = 0; i < 5; i++) {
+        ctx.fillStyle = i < rank ? "#ffd45e" : "#2c3040";
+        ctx.fillRect(px + 232 + i * 12, y + 3, 8, 8);
+        ctx.strokeStyle = "#565c6a";
+        ctx.strokeRect(px + 232.5 + i * 12, y + 3.5, 7, 7);
+      }
+      const can = state.perkPoints > 0 && rank < 5;
+      this.button(ctx, px + pw - 62, y + 1, 46, 14, "TRAIN", can, "#9fe08a", () => {
+        state.perks[id]++;
+        state.perkPoints--;
+        state.dirty = true;
+        state.saveTimer = 0;
+        Sfx.buy();
+        this.say(name + " rank " + state.perks[id]);
+      });
+      y += 34;
+    }
+    outlineText("Earn a point at every level.", px + 16, y + 4,
+      "#8d94a5", "8px 'Courier New', monospace");
+  },
+
+  // ------------------------------------------------------------ almanac
+  drawAlmanac(ctx, cy) {
+    const px = this.PX;
+    const ids = Object.keys(SPECIES);
+    const col2 = Math.ceil(ids.length / 2);
+    let seen = 0;
+    ids.forEach((id, i) => {
+      const sp = SPECIES[id];
+      const kills = state.killsBySpecies[id] || 0;
+      if (kills > 0) seen++;
+      const cx2 = px + 16 + (i >= col2 ? 196 : 0);
+      const y = cy + 12 + (i % col2) * 17;
+      // sprite thumbnail (silhouette until first kill)
+      ctx.save();
+      if (kills === 0 && sp.rarity !== "protected") ctx.globalAlpha = 0.3;
+      ctx.drawImage(SPRITES[id][1], cx2, y - 2, 16, Math.round(16 * sp.shape.h / sp.shape.w));
+      ctx.restore();
+      const label = sp.rarity === "protected"
+        ? sp.name + "  — protected"
+        : kills === 0 ? "???" : sp.name;
+      outlineText(label, cx2 + 22, y, RARITY_COLORS[sp.rarity],
+        "8px 'Courier New', monospace");
+      if (kills > 0) {
+        outlineText("×" + kills, cx2 + 156, y, "#8d94a5",
+          "8px 'Courier New', monospace", "right");
+      }
+    });
+    outlineText("THE ALMANAC — " + seen + "/" +
+      ids.filter((i2) => SPECIES[i2].rarity !== "protected").length + " bagged",
+      px + 16, cy - 4, "#f0ead2", "bold 9px 'Courier New', monospace");
   },
 
   drawLarder(ctx, cy) {
@@ -393,10 +469,11 @@ const UI = {
           Sfx.buy();
         });
       const already = state.trophies.includes(id);
+      const buffPct = Math.round(Biz.trophyBuff(id) * 100);
       this.button(ctx, px + 134, cy + 14, 110, 14,
-        already ? "DISPLAYED" : "DISPLAY +6%", !already, "#9fe08a", () => {
+        already ? "DISPLAYED" : "DISPLAY +" + buffPct + "%", !already, "#9fe08a", () => {
           Biz.collectDisplay();
-          this.say("On the trophy wall — +6% to everything, forever");
+          this.say("On the trophy wall — +" + buffPct + "% to everything, forever");
           Sfx.fanfare();
         });
     } else {
@@ -421,7 +498,8 @@ const UI = {
       ctx.strokeRect(px + 16.5, y + 0.5, 11, 9);
       const spr = SPRITES[id][1];
       ctx.drawImage(spr, px + 17, y + 2, 10, 7);
-      outlineText(SPECIES[id].name + " mount   +6% income", px + 34, y + 1,
+      outlineText(SPECIES[id].name + " mount   +" +
+        Math.round(Biz.trophyBuff(id) * 100) + "% income", px + 34, y + 1,
         RARITY_COLORS[SPECIES[id].rarity], "8px 'Courier New', monospace");
       y += 14;
     }

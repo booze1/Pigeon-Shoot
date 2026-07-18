@@ -128,4 +128,13 @@ const Sfx = {
     if (!this.ready()) return;
     this.tone("square", 340, 170, 0.07, 0.12);
   },
+
+  // The curlew's haunting rising-then-bubbling call
+  curlew() {
+    if (!this.ready()) return;
+    this.tone("sine", 620, 1250, 0.5, 0.26);
+    this.tone("sine", 1250, 900, 0.16, 0.22, 0.52);
+    this.tone("sine", 1250, 880, 0.14, 0.2, 0.7);
+    this.tone("sine", 1200, 860, 0.14, 0.18, 0.86);
+  },
 };
